@@ -1,3 +1,9 @@
+package org.matmexrhino.scalables
+
+/**
+ * @author Eugene Vigdorchik
+ */
+
 import org.scalatest._
 import matchers._
 import java.io.File

@@ -1,7 +1,10 @@
+package org.matmexrhino.scalables
+
 /**
  * Represents the immutable map from byte arrays to a list of byte arrays with fast assoc access.
  * Empty byte array is not supported as a key.
  * Last blocks accessed are cached in memory.
+ * @author Eugene Vigdorchik
  */
 
 import java.io._

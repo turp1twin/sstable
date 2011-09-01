@@ -1,3 +1,9 @@
+package org.matmexrhino.scalables
+
+/**
+ * @author Eugene Vigdorchik
+ */
+
 object Utils {
   implicit def arrayOrdering[T](implicit ord: Ordering[T]) = new Ordering[Array[T]] {
     def compare(a: Array[T], b: Array[T]): Int = {
