@@ -1,0 +1,95 @@
+/**
+ * Represents the immutable map from string to a list of strings with fast assoc access.
+ * The key set need not fit in memory, both the building and searching for values is lazy,
+ * only the fix-sized map is kept in memory to avoid entire key index traversal.
+ * When written, index is maintained sorted, partial files are truncated when index overflows.
+ * At a final stage partial sorted files are merged into final one.
+ */
+
+import java.io.{RandomAccessFile => RAF, File}
+import scala.collection.SortedMap
+
+// The stream contains keys in ascending order, its size known in advance
+// allows to memoize at equal distance.
+class SSTable(f: File) {
+  val in = new RAF(f, "r")
+
+  def apply(key: String): Option[Stream[String]] = {
+    findOffset(key) map { offs =>
+      Stream.iterate(offs){ offs =>
+        in.seek(offs - 8)
+        in.readLong
+      } takeWhile (-1L !=) map { offs =>
+        in.seek(offs)
+        in.readUTF
+      }
+    }
+  }
+
+  lazy val indexMap = {
+    in.seek(0L)
+    in.seek(in.readLong)
+    val idxSize = in.readInt
+    val stream = Stream continually (in.readUTF, in.readLong) take idxSize
+
+    import SSTable.maxMapSize
+    if (idxSize > maxMapSize) {
+      val sparseIndex = {
+        val step = (idxSize + maxMapSize - 1) / maxMapSize
+        Stream.iterate(stream) (_ drop step) takeWhile (!_.isEmpty) map {stream => (stream.head._1, stream)}
+      }
+      Left(SortedMap(sparseIndex: _*))
+    } else
+      Right(SortedMap(stream: _*))
+  }
+
+  def findOffset(key: String): Option[Long] = indexMap match {
+    case Left(map) =>
+      val ord: Ordering[(String, Stream[(String, Long)])] = math.Ordering[String].on(_._1)
+      val max = map to key max ord
+      val stream = max._2 dropWhile (_._1 < key)
+      stream.headOption flatMap { case (k, offset) =>
+        if (k == key) Some(offset) else None
+      }
+    case Right(map) => map get key
+  }
+}
+
+object SSTable {
+  val maxMapSize = 64 * 1024
+
+  def write(elems: Stream[(String, String)], f: File): SSTable = {
+    import scala.collection.immutable.HashMap
+    def fresh = (
+      new HashMap[String, Long] {
+        override def default(k: String) = -1L
+      },
+      new RAF(File.createTempFile(f.getName, ""), "rw")
+    )
+
+    
+
+    val out = new RAF(f, "rw")
+    try {
+      out.writeLong(0L)
+
+      for ((k, v) <- elems) {
+        out.writeLong(index(k))
+        index(k) = out.length
+        out.writeUTF(v)
+      }
+      val idxOffset = out.length
+      val sortedIdx = SortedMap(index.toSeq: _*)
+      out.writeInt(sortedIdx.size)
+      for((k, offs) <- sortedIdx) {
+        out.writeUTF(k)
+        out.writeLong(offs)
+      }
+      out.seek(0L)
+      out.writeLong(idxOffset)
+    } finally {
+      out.close()
+    }
+    new SSTable(f)
+  }
+}
