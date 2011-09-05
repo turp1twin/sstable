@@ -23,18 +23,12 @@ class SSTable(f: File) {
   lazy val in = new RandomAccessFile(f, "r")
 
   def apply(key: Bytes): Option[Iterable[Bytes]] = {
-    if (blockMap.isEmpty) None else {
-      // Workaround for SI-4930
-      // Using range maps is not the right thing to do performancewise, and the profiling shows it,
-      // but currently SortedMap doesn't provide an API for nearest bindings search.
-      val (until, from) = (blockMap until key, blockMap from key)
-      if (until.isEmpty && from.firstKey > key) None else {
-        val (start, end) = if (!from.isEmpty && (from.firstKey equiv key)) {
-          val it = from.iterator map (_._2)
-          (it.next, if (it.hasNext) it.next else in.length)
-        } else {
-          (blockMap(until.lastKey), if (from.isEmpty) in.length else blockMap(from.firstKey))
-        }
+    if (blocks.isEmpty) None else {
+      implicit val pairOrd = bytesOrd.on[(Bytes, Long)](_._1)
+      val idx = le(blocks, key)
+      if (idx >= blocks.length) None else {
+        val start = blocks(idx)._2
+        val end = if (idx + 1 < blocks.length) blocks(idx + 1)._2 else in.length
 
         val block = BlockCache get (start, end)
         val binding = block find {
@@ -83,14 +77,14 @@ class SSTable(f: File) {
     } map (_ + 8) takeWhile (_ < in.length)
   }
 
-  lazy val blockMap: SortedMap[Bytes, Long] = {
+  lazy val blocks: Array[(Bytes, Long)] = {
     val stream = blockOffsets map { offset =>
       in.seek(offset)
       val bytes = new Bytes(in.readShort)
       in.readFully(bytes)
       (bytes, offset)
     }
-    SortedMap.empty ++ stream
+    stream.toArray
   }
 
   object BlockCache extends LRUCache[(Long, Long), Array[(Bytes, Array[Bytes])]] {

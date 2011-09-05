@@ -28,6 +28,19 @@ object Utils {
     }
   }
 
+  def le[K, V](arr: Array[(K, V)], elem: K)(implicit ord: Ordering[K]): Int  = {
+    import math.Ordering.Implicits.infixOrderingOps
+    def binarySearch(left: Int, right: Int): Int = {
+      if (right - left < 2) {
+        if (arr(left)._1 <= elem) left else right
+      } else {
+        val pivot = (left + right) / 2
+        if (elem < arr(pivot)._1) binarySearch(left, pivot) else binarySearch(pivot, right)
+      }
+    }
+    if (arr.isEmpty) 0 else binarySearch(0, arr.length)
+  }
+
   trait LRUCache[K, V] {
     val cache = scala.collection.mutable.HashMap.empty[K, (V, Int)]
     val cacheSize: Int
