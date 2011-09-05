@@ -45,15 +45,50 @@ class SSTable(f: File) {
     }
   }
 
-  lazy val blockMap: SortedMap[Bytes, Long] = {
-    val stream = Stream.iterate(0L) { offset =>
+  import collection.generic.{SeqFactory, GenericTraversableTemplate}
+  def fetchBlock[CC[X] <: Seq[X] with GenericTraversableTemplate[X, CC] : SeqFactory]
+      (start: Long, end: Long) = {
+    import java.nio.channels.FileChannel.MapMode
+    val buff = in.getChannel.map(MapMode.READ_ONLY, start, end - start)
+    def readBytes = {
+      val bytes = new Bytes(buff.getShort)
+      buff.get(bytes)
+      bytes
+    }
+
+    implicitly[SeqFactory[CC]].fill(blockSize) {
+      (readBytes, Array.fill(buff.getShort)(readBytes))
+    }
+  }
+  
+
+  def iter: Stream[(Bytes, Iterable[Bytes])] = {
+    def iterBlocks(offsets: Stream[Long]): Stream[List[(Bytes, Array[Bytes])]] = {
+      implicit val ev = List
+      offsets match {
+        case start #:: (tl@(end #:: _)) => fetchBlock(start, end) #:: iterBlocks(tl)
+        case start #:: _ => Stream(fetchBlock(start, in.length))
+        case _ => Stream()
+      }
+    }
+    iterBlocks(blockOffsets).flatten map {
+      case (k, vs) => (k, vs: Iterable[Bytes])
+    }
+  }
+
+  def blockOffsets: Stream[Long] = {
+    Stream.iterate(0L) { offset =>
       in.seek(offset)
       in.readLong
-    } takeWhile (_ + 8 < in.length) map { offset =>
-      in.seek(offset + 8)
+    } map (_ + 8) takeWhile (_ < in.length)
+  }
+
+  lazy val blockMap: SortedMap[Bytes, Long] = {
+    val stream = blockOffsets map { offset =>
+      in.seek(offset)
       val bytes = new Bytes(in.readShort)
       in.readFully(bytes)
-      (bytes, offset + 8)
+      (bytes, offset)
     }
     SortedMap.empty ++ stream
   }
@@ -62,18 +97,9 @@ class SSTable(f: File) {
     val cacheSize = 64
 
     def create(offsets: (Long, Long)) = {
-      import java.nio.channels.FileChannel.MapMode
       val (start, end) = offsets
-      val buff = in.getChannel.map(MapMode.READ_ONLY, start, end - start)
-      def readBytes = {
-        val bytes = new Bytes(buff.getShort)
-        buff.get(bytes)
-        bytes
-      }
-
-      Array.fill(blockSize) {
-        (readBytes, Array.fill(buff.getShort)(readBytes))
-      }
+      implicit val ev = collection.mutable.ArraySeq
+      fetchBlock(start, end).toArray
     }
   }
 }
