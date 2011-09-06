@@ -28,7 +28,7 @@ object Utils {
     }
   }
 
-  def le[K, V](arr: Array[(K, V)], elem: K)(implicit ord: Ordering[K]): Int  = {
+  def findLessEqual[K: Ordering, V](arr: Array[(K, V)], elem: K): Int  = {
     import math.Ordering.Implicits.infixOrderingOps
     def binarySearch(left: Int, right: Int): Int = {
       if (right - left < 2) {

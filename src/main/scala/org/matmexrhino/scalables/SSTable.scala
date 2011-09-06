@@ -25,7 +25,7 @@ class SSTable(f: File) {
   def apply(key: Bytes): Option[Iterable[Bytes]] = {
     if (blocks.isEmpty) None else {
       implicit val pairOrd = bytesOrd.on[(Bytes, Long)](_._1)
-      val idx = le(blocks, key)
+      val idx = findLessEqual(blocks, key)
       if (idx >= blocks.length) None else {
         val start = blocks(idx)._2
         val end = if (idx + 1 < blocks.length) blocks(idx + 1)._2 else in.length
