@@ -8,7 +8,6 @@ package org.matmexrhino.scalables
  */
 
 import java.io._
-import scala.collection.SortedMap
 
 import Utils._
 
